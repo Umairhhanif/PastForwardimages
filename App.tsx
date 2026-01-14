@@ -9,6 +9,7 @@ import { generateDecadeImage } from './services/geminiService.ts';
 import PolaroidCard from './components/PolaroidCard.tsx';
 import { createAlbumPage } from './lib/albumUtils.ts';
 import Footer from './components/Footer.tsx';
+import { resizeImage } from './lib/utils.ts';
 
 const DECADES = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s'];
 
@@ -60,23 +61,47 @@ function App() {
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
     const [generatedImages, setGeneratedImages] = useState<Record<string, GeneratedImage>>({});
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isUploading, setIsUploading] = useState<boolean>(false);
     const [isDownloading, setIsDownloading] = useState<boolean>(false);
     const [appState, setAppState] = useState<'idle' | 'image-uploaded' | 'generating' | 'results-shown'>('idle');
     const dragAreaRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const isMobile = useMediaQuery('(max-width: 768px)');
 
 
-    const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            setIsUploading(true);
             const file = e.target.files[0];
             const reader = new FileReader();
-            reader.onloadend = () => {
-                setUploadedImage(reader.result as string);
-                setAppState('image-uploaded');
-                setGeneratedImages({}); // Clear previous results
+            
+            reader.onloadend = async () => {
+                try {
+                    const base64 = reader.result as string;
+                    // Resize the image to ensure it stays within API limits
+                    const optimizedImage = await resizeImage(base64, 1024);
+                    setUploadedImage(optimizedImage);
+                    setAppState('image-uploaded');
+                    setGeneratedImages({}); // Clear previous results
+                } catch (err) {
+                    console.error("Failed to process uploaded image:", err);
+                    alert("Could not process this image. Please try another one.");
+                } finally {
+                    setIsUploading(false);
+                }
             };
+            
+            reader.onerror = () => {
+                setIsUploading(false);
+                alert("Failed to read file.");
+            };
+
             reader.readAsDataURL(file);
         }
+    };
+
+    const triggerUpload = () => {
+        fileInputRef.current?.click();
     };
 
     const handleGenerateClick = async () => {
@@ -247,15 +272,22 @@ function App() {
                              transition={{ delay: 2, duration: 0.8, type: 'spring' }}
                              className="flex flex-col items-center"
                         >
-                            <label htmlFor="file-upload" className="cursor-pointer group transform hover:scale-105 transition-transform duration-300">
+                            <button onClick={triggerUpload} className="cursor-pointer group transform hover:scale-105 transition-transform duration-300 focus:outline-none">
                                  <PolaroidCard 
-                                     caption="Click to begin"
-                                     status="done"
+                                     caption={isUploading ? "Processing..." : "Click to begin"}
+                                     status={isUploading ? "pending" : "done"}
                                  />
-                            </label>
-                            <input id="file-upload" type="file" className="hidden" accept="image/png, image/jpeg, image/webp" onChange={handleImageUpload} />
+                            </button>
+                            <input 
+                                ref={fileInputRef}
+                                id="file-upload" 
+                                type="file" 
+                                className="hidden" 
+                                accept="image/png, image/jpeg, image/webp" 
+                                onChange={handleImageUpload} 
+                            />
                             <p className="mt-8 font-permanent-marker text-neutral-500 text-center max-w-xs text-lg">
-                                Click the polaroid to upload your photo and start your journey through time.
+                                {isUploading ? "Getting your photo ready..." : "Click the polaroid to upload your photo and start your journey through time."}
                             </p>
                         </motion.div>
                     </div>
