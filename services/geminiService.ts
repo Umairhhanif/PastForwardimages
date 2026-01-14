@@ -27,25 +27,27 @@ function processGeminiResponse(response: GenerateContentResponse): string {
 
     const textResponse = response.text;
     console.error("API did not return an image. Response text:", textResponse);
-    throw new Error(textResponse || "The AI returned a text response instead of an image. This might be due to safety filters.");
+    throw new Error(textResponse || "The AI returned a text response instead of an image.");
 }
 
 /**
- * A wrapper for the Gemini API call with retry logic and environment variable detection.
+ * A wrapper for the Gemini API call with retry logic.
  */
 async function callGeminiWithRetry(imagePart: any, textPart: any): Promise<GenerateContentResponse> {
     const maxRetries = 2;
     const initialDelay = 1500;
     
-    // Check for common API key environment variable names
-    const apiKey = process.env.API_KEY || process.env.GOOGLE_API_KEY;
+    // The environment variable MUST be named exactly API_KEY.
+    const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
-        throw new Error("Missing API Key. Please set API_KEY or GOOGLE_API_KEY in your environment variables.");
+        // Specifically guide Vercel users who might have used GOOGLE_API_KEY instead of API_KEY
+        throw new Error("API_KEY is missing. Please rename your Vercel environment variable from 'GOOGLE_API_KEY' to 'API_KEY' and re-deploy.");
     }
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+            // New instance per call as per guidelines
             const ai = new GoogleGenAI({ apiKey });
             return await ai.models.generateContent({
                 model: 'gemini-2.5-flash-image',
@@ -72,7 +74,7 @@ async function callGeminiWithRetry(imagePart: any, textPart: any): Promise<Gener
 export async function generateDecadeImage(imageDataUrl: string, prompt: string): Promise<string> {
     const match = imageDataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
     if (!match) {
-        throw new Error("Invalid image data format. Please try re-uploading your photo.");
+        throw new Error("Invalid image format. Please try re-uploading.");
     }
     const [, mimeType, base64Data] = match;
 
@@ -87,10 +89,10 @@ export async function generateDecadeImage(imageDataUrl: string, prompt: string):
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         
-        if (errorMessage.toLowerCase().includes("text response") || errorMessage.toLowerCase().includes("safety")) {
+        // Handle potential safety blocks or non-image responses
+        if (errorMessage.toLowerCase().includes("safety") || errorMessage.toLowerCase().includes("text response")) {
             const decade = extractDecade(prompt);
             if (decade) {
-                console.log(`Retrying with fallback prompt for ${decade}...`);
                 const fallbackTextPart = { text: getFallbackPrompt(decade) };
                 const fallbackResponse = await callGeminiWithRetry(imagePart, fallbackTextPart);
                 return processGeminiResponse(fallbackResponse);
