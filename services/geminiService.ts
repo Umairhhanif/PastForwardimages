@@ -7,24 +7,16 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 /**
  * Creates a fallback prompt to use when the primary one is blocked.
- * @param decade The decade string (e.g., "1950s").
- * @returns The fallback prompt string.
  */
 function getFallbackPrompt(decade: string): string {
-    return `Reimagine the person in this photo as if they were in the ${decade}. Focus on the clothing, hairstyle, and the photographic style of that era. Ensure the result is a clear, photorealistic image.`;
+    return `Reimagine the person in this photo as if they were in the ${decade}. Focus on clothing and hairstyle. Ensure it looks like an authentic vintage photograph.`;
 }
 
-/**
- * Extracts the decade (e.g., "1950s") from a prompt string.
- */
 function extractDecade(prompt: string): string | null {
     const match = prompt.match(/(\d{4}s)/);
     return match ? match[1] : null;
 }
 
-/**
- * Processes the Gemini API response, extracting the image part.
- */
 function processGeminiResponse(response: GenerateContentResponse): string {
     const imagePartFromResponse = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
 
@@ -39,16 +31,22 @@ function processGeminiResponse(response: GenerateContentResponse): string {
 }
 
 /**
- * A wrapper for the Gemini API call with retry logic.
+ * A wrapper for the Gemini API call with retry logic and environment variable detection.
  */
 async function callGeminiWithRetry(imagePart: any, textPart: any): Promise<GenerateContentResponse> {
     const maxRetries = 2;
     const initialDelay = 1500;
+    
+    // Check for common API key environment variable names
+    const apiKey = process.env.API_KEY || process.env.GOOGLE_API_KEY;
+    
+    if (!apiKey) {
+        throw new Error("Missing API Key. Please set API_KEY or GOOGLE_API_KEY in your environment variables.");
+    }
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            // Create a fresh instance for every call to ensure correct API key usage
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey });
             return await ai.models.generateContent({
                 model: 'gemini-2.5-flash-image',
                 contents: { parts: [imagePart, textPart] },
@@ -72,13 +70,9 @@ async function callGeminiWithRetry(imagePart: any, textPart: any): Promise<Gener
  * Generates a decade-styled image.
  */
 export async function generateDecadeImage(imageDataUrl: string, prompt: string): Promise<string> {
-    if (!process.env.API_KEY) {
-        throw new Error("API Key is missing. Please check your environment configuration.");
-    }
-
     const match = imageDataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
     if (!match) {
-        throw new Error("Invalid image data format.");
+        throw new Error("Invalid image data format. Please try re-uploading your photo.");
     }
     const [, mimeType, base64Data] = match;
 
@@ -93,7 +87,6 @@ export async function generateDecadeImage(imageDataUrl: string, prompt: string):
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         
-        // If it seems like a block (no image returned but text present), try the fallback
         if (errorMessage.toLowerCase().includes("text response") || errorMessage.toLowerCase().includes("safety")) {
             const decade = extractDecade(prompt);
             if (decade) {

@@ -55,20 +55,22 @@ const Placeholder = () => (
 const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, error, dragConstraintsRef, onShake, onDownload, isMobile }) => {
     const [isDeveloped, setIsDeveloped] = useState(false);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
+    const imgRef = useRef<HTMLImageElement>(null);
     const lastShakeTime = useRef(0);
     const lastVelocity = useRef({ x: 0, y: 0 });
 
+    // Handle resetting animation state when source changes
     useEffect(() => {
-        if (status === 'pending') {
-            setIsDeveloped(false);
-            setIsImageLoaded(false);
+        setIsDeveloped(false);
+        setIsImageLoaded(false);
+        
+        // Check if image is already cached/loaded immediately
+        if (imgRef.current?.complete) {
+            setIsImageLoaded(true);
         }
-        if (status === 'done' && imageUrl) {
-            setIsDeveloped(false);
-            setIsImageLoaded(false);
-        }
-    }, [imageUrl, status]);
+    }, [imageUrl]);
 
+    // Developing sequence
     useEffect(() => {
         if (isImageLoaded) {
             const timer = setTimeout(() => setIsDeveloped(true), 200);
@@ -110,18 +112,16 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onDownload(caption); }}
                                     className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none"
-                                    aria-label={`Download image for ${caption}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                     </svg>
                                 </button>
                             )}
-                             {(isMobile || status === 'done') && onShake && (
+                             {onShake && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onShake(caption); }}
                                     className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none"
-                                    aria-label={`Regenerate image for ${caption}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.899 2.186l-1.42.71a5.002 5.002 0 00-8.479-1.554H10a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm12 14a1 1 0 01-1-1v-2.101a7.002 7.002 0 01-11.899-2.186l1.42-.71a5.002 5.002 0 008.479 1.554H10a1 1 0 110-2h6a1 1 0 011 1v6a1 1 0 01-1 1z" clipRule="evenodd" />
@@ -129,21 +129,24 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                                 </button>
                             )}
                         </div>
+
+                        {/* Developing overlay */}
                         <div
-                            className={`absolute inset-0 z-10 bg-[#3a322c] transition-opacity duration-[3500ms] ease-out ${
+                            className={cn(
+                                "absolute inset-0 z-10 bg-[#3a322c] transition-opacity duration-[3000ms] ease-out pointer-events-none",
                                 isDeveloped ? 'opacity-0' : 'opacity-100'
-                            }`}
+                            )}
                         />
+
                         <img
-                            key={imageUrl}
+                            ref={imgRef}
                             src={imageUrl}
                             alt={caption}
                             onLoad={() => setIsImageLoaded(true)}
-                            className={`w-full h-full object-cover transition-all duration-[4000ms] ease-in-out ${
-                                isDeveloped 
-                                ? 'opacity-100 filter-none' 
-                                : 'opacity-80 filter sepia(1) contrast(0.8) brightness(0.8)'
-                            }`}
+                            className={cn(
+                                "w-full h-full object-cover transition-all duration-[3000ms] ease-in-out",
+                                isDeveloped ? 'opacity-100 filter-none' : 'opacity-60 filter sepia(1) blur-[1px]'
+                            )}
                             style={{ opacity: isImageLoaded ? 1 : 0 }}
                         />
                     </>
@@ -161,7 +164,6 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
         </>
     );
 
-    // Disable dragging on idle/upload cards to ensure clicks work
     const isPlaceholder = !imageUrl && (caption === "Click to begin" || caption === "Processing...");
 
     if (isMobile || isPlaceholder) {
