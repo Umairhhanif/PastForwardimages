@@ -13,7 +13,6 @@ import { resizeImage } from './lib/utils.ts';
 
 const DECADES = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s'];
 
-// Pre-defined positions for a scattered look on desktop
 const POSITIONS = [
     { top: '5%', left: '10%', rotate: -8 },
     { top: '15%', left: '60%', rotate: 5 },
@@ -32,7 +31,6 @@ const GHOST_POLAROIDS_CONFIG = [
   { initial: { x: "100%", y: "150%", rotate: 10 }, transition: { delay: 0.3 } },
 ];
 
-
 type ImageStatus = 'pending' | 'done' | 'error';
 interface GeneratedImage {
     status: ImageStatus;
@@ -47,9 +45,7 @@ const useMediaQuery = (query: string) => {
     const [matches, setMatches] = useState(false);
     useEffect(() => {
         const media = window.matchMedia(query);
-        if (media.matches !== matches) {
-            setMatches(media.matches);
-        }
+        if (media.matches !== matches) setMatches(media.matches);
         const listener = () => setMatches(media.matches);
         window.addEventListener('resize', listener);
         return () => window.removeEventListener('resize', listener);
@@ -68,39 +64,33 @@ function App() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isMobile = useMediaQuery('(max-width: 768px)');
 
-
     const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setIsUploading(true);
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            
-            reader.onloadend = async () => {
-                try {
-                    const base64 = reader.result as string;
-                    // Resize the image to ensure it stays within API limits
-                    const optimizedImage = await resizeImage(base64, 1024);
-                    setUploadedImage(optimizedImage);
-                    setAppState('image-uploaded');
-                    setGeneratedImages({}); // Clear previous results
-                } catch (err) {
-                    console.error("Failed to process uploaded image:", err);
-                    alert("Could not process this image. Please try another one.");
-                } finally {
-                    setIsUploading(false);
-                }
-            };
-            
-            reader.onerror = () => {
-                setIsUploading(false);
-                alert("Failed to read file.");
-            };
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-            reader.readAsDataURL(file);
-        }
+        setIsUploading(true);
+        const reader = new FileReader();
+        
+        reader.onloadend = async () => {
+            try {
+                const base64 = reader.result as string;
+                const optimizedImage = await resizeImage(base64, 1024);
+                setUploadedImage(optimizedImage);
+                setAppState('image-uploaded');
+                setGeneratedImages({});
+            } catch (err) {
+                console.error("Upload error:", err);
+                alert("Failed to process image. Please try a standard JPG/PNG.");
+            } finally {
+                setIsUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+            }
+        };
+        reader.readAsDataURL(file);
     };
 
     const triggerUpload = () => {
+        if (isUploading) return;
         fileInputRef.current?.click();
     };
 
@@ -116,73 +106,39 @@ function App() {
         });
         setGeneratedImages(initialImages);
 
-        const concurrencyLimit = 2; // Process two decades at a time
-        const decadesQueue = [...DECADES];
-
-        const processDecade = async (decade: string) => {
+        // Process one by one to avoid rate limits and improve stability
+        for (const decade of DECADES) {
             try {
-                const prompt = `Reimagine the person in this photo in the style of the ${decade}. This includes clothing, hairstyle, photo quality, and the overall aesthetic of that decade. The output must be a photorealistic image showing the person clearly.`;
+                const prompt = `Reimagine the person in this photo in the style of the ${decade}. Focus on era-appropriate clothing, hairstyle, and photographic aesthetic. Output a photorealistic result.`;
                 const resultUrl = await generateDecadeImage(uploadedImage, prompt);
                 setGeneratedImages(prev => ({
                     ...prev,
                     [decade]: { status: 'done', url: resultUrl },
                 }));
             } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+                const msg = err instanceof Error ? err.message : "Error";
                 setGeneratedImages(prev => ({
                     ...prev,
-                    [decade]: { status: 'error', error: errorMessage },
+                    [decade]: { status: 'error', error: msg },
                 }));
-                console.error(`Failed to generate image for ${decade}:`, err);
             }
-        };
-
-        const workers = Array(concurrencyLimit).fill(null).map(async () => {
-            while (decadesQueue.length > 0) {
-                const decade = decadesQueue.shift();
-                if (decade) {
-                    await processDecade(decade);
-                }
-            }
-        });
-
-        await Promise.all(workers);
+        }
 
         setIsLoading(false);
         setAppState('results-shown');
     };
 
     const handleRegenerateDecade = async (decade: string) => {
-        if (!uploadedImage) return;
+        if (!uploadedImage || generatedImages[decade]?.status === 'pending') return;
 
-        // Prevent re-triggering if a generation is already in progress
-        if (generatedImages[decade]?.status === 'pending') {
-            return;
-        }
-        
-        console.log(`Regenerating image for ${decade}...`);
-
-        // Set the specific decade to 'pending' to show the loading spinner
-        setGeneratedImages(prev => ({
-            ...prev,
-            [decade]: { status: 'pending' },
-        }));
-
-        // Call the generation service for the specific decade
+        setGeneratedImages(prev => ({ ...prev, [decade]: { status: 'pending' } }));
         try {
-            const prompt = `Reimagine the person in this photo in the style of the ${decade}. This includes clothing, hairstyle, photo quality, and the overall aesthetic of that decade. The output must be a photorealistic image showing the person clearly.`;
+            const prompt = `Reimagine the person in this photo in the style of the ${decade}. Era-appropriate clothing and high photographic quality.`;
             const resultUrl = await generateDecadeImage(uploadedImage, prompt);
-            setGeneratedImages(prev => ({
-                ...prev,
-                [decade]: { status: 'done', url: resultUrl },
-            }));
+            setGeneratedImages(prev => ({ ...prev, [decade]: { status: 'done', url: resultUrl } }));
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-            setGeneratedImages(prev => ({
-                ...prev,
-                [decade]: { status: 'error', error: errorMessage },
-            }));
-            console.error(`Failed to regenerate image for ${decade}:`, err);
+            const msg = err instanceof Error ? err.message : "Error";
+            setGeneratedImages(prev => ({ ...prev, [decade]: { status: 'error', error: msg } }));
         }
     };
     
@@ -198,39 +154,31 @@ function App() {
             const link = document.createElement('a');
             link.href = image.url;
             link.download = `past-forward-${decade}.jpg`;
-            document.body.appendChild(link);
             link.click();
-            document.body.removeChild(link);
         }
     };
 
     const handleDownloadAlbum = async () => {
         setIsDownloading(true);
         try {
-            const imageData = Object.entries(generatedImages)
-                .filter(([, image]) => image.status === 'done' && image.url)
-                .reduce((acc, [decade, image]) => {
-                    acc[decade] = image!.url!;
-                    return acc;
-                }, {} as Record<string, string>);
+            // Fix: Explicitly cast Object.entries results to avoid 'unknown' type errors during filtering and reduction.
+            const imageData = (Object.entries(generatedImages) as [string, GeneratedImage][])
+                .filter(([, img]) => img.status === 'done' && img.url)
+                .reduce((acc, [d, img]) => ({ ...acc, [d]: img.url! }), {} as Record<string, string>);
 
-            if (Object.keys(imageData).length < DECADES.length) {
-                alert("Please wait for all images to finish generating before downloading the album.");
+            if (Object.keys(imageData).length === 0) {
+                alert("No successfully generated images to include in the album.");
                 return;
             }
 
             const albumDataUrl = await createAlbumPage(imageData);
-
             const link = document.createElement('a');
             link.href = albumDataUrl;
             link.download = 'past-forward-album.jpg';
-            document.body.appendChild(link);
             link.click();
-            document.body.removeChild(link);
-
         } catch (error) {
-            console.error("Failed to create or download album:", error);
-            alert("Sorry, there was an error creating your album. Please try again.");
+            console.error("Album error:", error);
+            alert("Error creating album.");
         } finally {
             setIsDownloading(false);
         }
@@ -248,46 +196,36 @@ function App() {
 
                 {appState === 'idle' && (
                      <div className="relative flex flex-col items-center justify-center w-full">
-                        {/* Ghost polaroids for intro animation */}
                         {GHOST_POLAROIDS_CONFIG.map((config, index) => (
                              <motion.div
                                 key={index}
                                 className="absolute w-80 h-[26rem] rounded-md p-4 bg-neutral-100/10 blur-sm"
                                 initial={config.initial}
-                                animate={{
-                                    x: "0%", y: "0%", rotate: (Math.random() - 0.5) * 20,
-                                    scale: 0,
-                                    opacity: 0,
-                                }}
-                                transition={{
-                                    ...config.transition,
-                                    ease: "circOut",
-                                    duration: 2,
-                                }}
+                                animate={{ x: "0%", y: "0%", rotate: 0, scale: 0, opacity: 0 }}
+                                transition={{ ...config.transition, ease: "circOut", duration: 2 }}
                             />
                         ))}
                         <motion.div
                              initial={{ opacity: 0, scale: 0.8 }}
                              animate={{ opacity: 1, scale: 1 }}
-                             transition={{ delay: 2, duration: 0.8, type: 'spring' }}
+                             transition={{ delay: 1, duration: 0.8, type: 'spring' }}
                              className="flex flex-col items-center"
                         >
-                            <button onClick={triggerUpload} className="cursor-pointer group transform hover:scale-105 transition-transform duration-300 focus:outline-none">
+                            <div onClick={triggerUpload} className="cursor-pointer group transform hover:scale-105 transition-transform duration-300">
                                  <PolaroidCard 
                                      caption={isUploading ? "Processing..." : "Click to begin"}
                                      status={isUploading ? "pending" : "done"}
                                  />
-                            </button>
+                            </div>
                             <input 
                                 ref={fileInputRef}
-                                id="file-upload" 
                                 type="file" 
                                 className="hidden" 
-                                accept="image/png, image/jpeg, image/webp" 
+                                accept="image/*" 
                                 onChange={handleImageUpload} 
                             />
                             <p className="mt-8 font-permanent-marker text-neutral-500 text-center max-w-xs text-lg">
-                                {isUploading ? "Getting your photo ready..." : "Click the polaroid to upload your photo and start your journey through time."}
+                                {isUploading ? "Reading your photo..." : "Click the polaroid to upload your photo and start your journey through time."}
                             </p>
                         </motion.div>
                     </div>
@@ -295,18 +233,10 @@ function App() {
 
                 {appState === 'image-uploaded' && uploadedImage && (
                     <div className="flex flex-col items-center gap-6">
-                         <PolaroidCard 
-                            imageUrl={uploadedImage} 
-                            caption="Your Photo" 
-                            status="done"
-                         />
+                         <PolaroidCard imageUrl={uploadedImage} caption="Your Photo" status="done" />
                          <div className="flex items-center gap-4 mt-4">
-                            <button onClick={handleReset} className={secondaryButtonClasses}>
-                                Different Photo
-                            </button>
-                            <button onClick={handleGenerateClick} className={primaryButtonClasses}>
-                                Generate
-                            </button>
+                            <button onClick={handleReset} className={secondaryButtonClasses}>Different Photo</button>
+                            <button onClick={handleGenerateClick} className={primaryButtonClasses}>Generate</button>
                          </div>
                     </div>
                 )}
@@ -338,14 +268,9 @@ function App() {
                                             key={decade}
                                             className="absolute cursor-grab active:cursor-grabbing"
                                             style={{ top, left }}
-                                            initial={{ opacity: 0, scale: 0.5, y: 100, rotate: 0 }}
-                                            animate={{ 
-                                                opacity: 1, 
-                                                scale: 1, 
-                                                y: 0,
-                                                rotate: `${rotate}deg`,
-                                            }}
-                                            transition={{ type: 'spring', stiffness: 100, damping: 20, delay: index * 0.15 }}
+                                            initial={{ opacity: 0, scale: 0.5, y: 100 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0, rotate: `${rotate}deg` }}
+                                            transition={{ type: 'spring', stiffness: 100, damping: 20, delay: index * 0.1 }}
                                         >
                                             <PolaroidCard 
                                                 dragConstraintsRef={dragAreaRef}
@@ -368,13 +293,11 @@ function App() {
                                     <button 
                                         onClick={handleDownloadAlbum} 
                                         disabled={isDownloading} 
-                                        className={`${primaryButtonClasses} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                        className={`${primaryButtonClasses} disabled:opacity-50`}
                                     >
                                         {isDownloading ? 'Creating Album...' : 'Download Album'}
                                     </button>
-                                    <button onClick={handleReset} className={secondaryButtonClasses}>
-                                        Start Over
-                                    </button>
+                                    <button onClick={handleReset} className={secondaryButtonClasses}>Start Over</button>
                                 </div>
                             )}
                         </div>

@@ -22,19 +22,23 @@ interface PolaroidCardProps {
 }
 
 const LoadingSpinner = () => (
-    <div className="flex items-center justify-center h-full">
-        <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <div className="flex flex-col items-center justify-center h-full gap-4 p-4">
+        <svg className="animate-spin h-10 w-10 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
+        <span className="font-permanent-marker text-neutral-500 text-sm text-center">Developing...</span>
     </div>
 );
 
-const ErrorDisplay = () => (
-    <div className="flex items-center justify-center h-full">
-         <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+const ErrorDisplay = ({ message }: { message?: string }) => (
+    <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+         <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
+        <p className="text-red-500 font-bold text-xs uppercase tracking-tighter line-clamp-3">
+            {message || "API ERROR"}
+        </p>
     </div>
 );
 
@@ -48,14 +52,12 @@ const Placeholder = () => (
     </div>
 );
 
-
 const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, error, dragConstraintsRef, onShake, onDownload, isMobile }) => {
     const [isDeveloped, setIsDeveloped] = useState(false);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const lastShakeTime = useRef(0);
     const lastVelocity = useRef({ x: 0, y: 0 });
 
-    // Reset states when the image URL changes or status goes to pending.
     useEffect(() => {
         if (status === 'pending') {
             setIsDeveloped(false);
@@ -67,34 +69,22 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
         }
     }, [imageUrl, status]);
 
-    // When the image is loaded, start the developing animation.
     useEffect(() => {
         if (isImageLoaded) {
-            const timer = setTimeout(() => {
-                setIsDeveloped(true);
-            }, 200); // Short delay before animation starts
+            const timer = setTimeout(() => setIsDeveloped(true), 200);
             return () => clearTimeout(timer);
         }
     }, [isImageLoaded]);
 
-    const handleDragStart = () => {
-        // Reset velocity on new drag to prevent false triggers from old data
-        lastVelocity.current = { x: 0, y: 0 };
-    };
+    const handleDragStart = () => { lastVelocity.current = { x: 0, y: 0 }; };
 
-    const handleDrag = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const handleDrag = (event: any, info: PanInfo) => {
         if (!onShake || isMobile) return;
-
-        const velocityThreshold = 1500; // Require a high velocity to be considered a "shake".
-        const shakeCooldown = 2000; // 2 seconds cooldown to prevent spamming.
-
+        const velocityThreshold = 1500;
+        const shakeCooldown = 2000;
         const { x, y } = info.velocity;
         const { x: prevX, y: prevY } = lastVelocity.current;
         const now = Date.now();
-
-        // A true "shake" is a rapid movement AND a sharp change in direction.
-        // We detect this by checking if the velocity is high and if its direction
-        // has reversed from the last frame (i.e., the dot product is negative).
         const magnitude = Math.sqrt(x * x + y * y);
         const dotProduct = (x * prevX) + (y * prevY);
 
@@ -102,7 +92,6 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
             lastShakeTime.current = now;
             onShake(caption);
         }
-
         lastVelocity.current = { x, y };
     };
 
@@ -110,7 +99,7 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
         <>
             <div className="w-full bg-neutral-900 shadow-inner flex-grow relative overflow-hidden group">
                 {status === 'pending' && <LoadingSpinner />}
-                {status === 'error' && <ErrorDisplay />}
+                {status === 'error' && <ErrorDisplay message={error} />}
                 {status === 'done' && imageUrl && (
                     <>
                         <div className={cn(
@@ -119,11 +108,8 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                         )}>
                             {onDownload && (
                                 <button
-                                    onClick={(e) => {
-                                        e.stopPropagation(); // Prevent drag from starting on click
-                                        onDownload(caption);
-                                    }}
-                                    className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none focus:ring-2 focus:ring-white"
+                                    onClick={(e) => { e.stopPropagation(); onDownload(caption); }}
+                                    className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none"
                                     aria-label={`Download image for ${caption}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -131,13 +117,10 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                                     </svg>
                                 </button>
                             )}
-                             {isMobile && onShake && (
+                             {(isMobile || status === 'done') && onShake && (
                                 <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onShake(caption);
-                                    }}
-                                    className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none focus:ring-2 focus:ring-white"
+                                    onClick={(e) => { e.stopPropagation(); onShake(caption); }}
+                                    className="p-2 bg-black/50 rounded-full text-white hover:bg-black/75 focus:outline-none"
                                     aria-label={`Regenerate image for ${caption}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -146,17 +129,11 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                                 </button>
                             )}
                         </div>
-
-
-                        {/* The developing chemical overlay - fades out */}
                         <div
                             className={`absolute inset-0 z-10 bg-[#3a322c] transition-opacity duration-[3500ms] ease-out ${
                                 isDeveloped ? 'opacity-0' : 'opacity-100'
                             }`}
-                            aria-hidden="true"
                         />
-                        
-                        {/* The Image - fades in and color corrects */}
                         <img
                             key={imageUrl}
                             src={imageUrl}
@@ -167,7 +144,7 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                                 ? 'opacity-100 filter-none' 
                                 : 'opacity-80 filter sepia(1) contrast(0.8) brightness(0.8)'
                             }`}
-                            style={{ opacity: isImageLoaded ? undefined : 0 }}
+                            style={{ opacity: isImageLoaded ? 1 : 0 }}
                         />
                     </>
                 )}
@@ -184,9 +161,12 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
         </>
     );
 
-    if (isMobile) {
+    // Disable dragging on idle/upload cards to ensure clicks work
+    const isPlaceholder = !imageUrl && (caption === "Click to begin" || caption === "Processing...");
+
+    if (isMobile || isPlaceholder) {
         return (
-            <div className="bg-neutral-100 dark:bg-neutral-100 !p-4 !pb-16 flex flex-col items-center justify-start aspect-[3/4] w-80 max-w-full rounded-md shadow-lg relative">
+            <div className="bg-neutral-100 !p-4 !pb-16 flex flex-col items-center justify-start aspect-[3/4] w-80 max-w-full rounded-md shadow-lg relative">
                 {cardInnerContent}
             </div>
         );
@@ -195,7 +175,7 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
     return (
         <DraggableCardContainer>
             <DraggableCardBody 
-                className="bg-neutral-100 dark:bg-neutral-100 !p-4 !pb-16 flex flex-col items-center justify-start aspect-[3/4] w-80 max-w-full"
+                className="bg-neutral-100 !p-4 !pb-16 flex flex-col items-center justify-start aspect-[3/4] w-80 max-w-full"
                 dragConstraintsRef={dragConstraintsRef}
                 onDragStart={handleDragStart}
                 onDrag={handleDrag}
