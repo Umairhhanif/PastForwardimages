@@ -1,10 +1,11 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect, useRef } from 'react';
-import { DraggableCardContainer, DraggableCardBody } from './ui/draggable-card';
-import { cn } from '../lib/utils';
+import { DraggableCardContainer, DraggableCardBody } from './ui/draggable-card.tsx';
+import { cn } from '../lib/utils.ts';
 import type { PanInfo } from 'framer-motion';
 
 type ImageStatus = 'pending' | 'done' | 'error';

@@ -1,8 +1,9 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { cn } from "../../lib/utils";
+import { cn } from "../../lib/utils.ts";
 import React, { useRef } from "react";
 import {
   motion,

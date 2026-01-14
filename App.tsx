@@ -1,13 +1,14 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, ChangeEvent, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { generateDecadeImage } from './services/geminiService';
-import PolaroidCard from './components/PolaroidCard';
-import { createAlbumPage } from './lib/albumUtils';
-import Footer from './components/Footer';
+import { generateDecadeImage } from './services/geminiService.ts';
+import PolaroidCard from './components/PolaroidCard.tsx';
+import { createAlbumPage } from './lib/albumUtils.ts';
+import Footer from './components/Footer.tsx';
 
 const DECADES = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s'];
 

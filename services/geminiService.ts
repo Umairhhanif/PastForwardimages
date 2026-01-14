@@ -1,18 +1,9 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { GoogleGenAI } from "@google/genai";
-import type { GenerateContentResponse } from "@google/genai";
-
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable is not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
-
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 // --- Helper Functions ---
 
@@ -55,11 +46,12 @@ function processGeminiResponse(response: GenerateContentResponse): string {
 
 /**
  * A wrapper for the Gemini API call that includes a retry mechanism for internal server errors.
+ * @param ai The GoogleGenAI instance.
  * @param imagePart The image part of the request payload.
  * @param textPart The text part of the request payload.
  * @returns The GenerateContentResponse from the API.
  */
-async function callGeminiWithRetry(imagePart: object, textPart: object): Promise<GenerateContentResponse> {
+async function callGeminiWithRetry(ai: GoogleGenAI, imagePart: object, textPart: object): Promise<GenerateContentResponse> {
     const maxRetries = 3;
     const initialDelay = 1000;
 
@@ -96,6 +88,14 @@ async function callGeminiWithRetry(imagePart: object, textPart: object): Promise
  * @returns A promise that resolves to a base64-encoded image data URL of the generated image.
  */
 export async function generateDecadeImage(imageDataUrl: string, prompt: string): Promise<string> {
+  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+
+  if (!apiKey) {
+    throw new Error("API_KEY environment variable is not set. Please ensure your API key is correctly configured.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   const match = imageDataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
   if (!match) {
     throw new Error("Invalid image data URL format. Expected 'data:image/...;base64,...'");
@@ -110,7 +110,7 @@ export async function generateDecadeImage(imageDataUrl: string, prompt: string):
     try {
         console.log("Attempting generation with original prompt...");
         const textPart = { text: prompt };
-        const response = await callGeminiWithRetry(imagePart, textPart);
+        const response = await callGeminiWithRetry(ai, imagePart, textPart);
         return processGeminiResponse(response);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
@@ -129,7 +129,7 @@ export async function generateDecadeImage(imageDataUrl: string, prompt: string):
                 const fallbackPrompt = getFallbackPrompt(decade);
                 console.log(`Attempting generation with fallback prompt for ${decade}...`);
                 const fallbackTextPart = { text: fallbackPrompt };
-                const fallbackResponse = await callGeminiWithRetry(imagePart, fallbackTextPart);
+                const fallbackResponse = await callGeminiWithRetry(ai, imagePart, fallbackTextPart);
                 return processGeminiResponse(fallbackResponse);
             } catch (fallbackError) {
                 console.error("Fallback prompt also failed.", fallbackError);
