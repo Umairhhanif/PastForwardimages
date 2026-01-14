@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,7 +31,7 @@ const Footer = () => {
             <div className="max-w-screen-xl mx-auto flex justify-between items-center gap-4 px-4">
                 {/* Left Side */}
                 <div className="hidden md:flex items-center gap-4 text-neutral-500 whitespace-nowrap">
-                    <p>Powered by Gemini 2.5 Flash Image Preview</p>
+                    <p>Powered by Gemini 3 Pro Image Preview</p>
                     <span className="text-neutral-700" aria-hidden="true">|</span>
                     <p>
                         Created by{' '}

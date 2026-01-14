@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, ChangeEvent, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { generateDecadeImage } from './services/geminiService.ts';
 import PolaroidCard from './components/PolaroidCard.tsx';
 import { createAlbumPage } from './lib/albumUtils.ts';
@@ -38,8 +38,8 @@ interface GeneratedImage {
     error?: string;
 }
 
-const primaryButtonClasses = "font-permanent-marker text-xl text-center text-black bg-yellow-400 py-3 px-8 rounded-sm transform transition-transform duration-200 hover:scale-105 hover:-rotate-2 hover:bg-yellow-300 shadow-[2px_2px_0px_2px_rgba(0,0,0,0.2)]";
-const secondaryButtonClasses = "font-permanent-marker text-xl text-center text-white bg-white/10 backdrop-blur-sm border-2 border-white/80 py-3 px-8 rounded-sm transform transition-transform duration-200 hover:scale-105 hover:rotate-2 hover:bg-white hover:text-black";
+const primaryButtonClasses = "font-permanent-marker text-xl text-center text-black bg-yellow-400 py-3 px-8 rounded-sm transform transition-transform duration-200 hover:scale-105 hover:-rotate-2 hover:bg-yellow-300 shadow-[2px_2px_0px_2px_rgba(0,0,0,0.2)] cursor-pointer";
+const secondaryButtonClasses = "font-permanent-marker text-xl text-center text-white bg-white/10 backdrop-blur-sm border-2 border-white/80 py-3 px-8 rounded-sm transform transition-transform duration-200 hover:scale-105 hover:rotate-2 hover:bg-white hover:text-black cursor-pointer";
 
 const useMediaQuery = (query: string) => {
     const [matches, setMatches] = useState(false);
@@ -53,7 +53,10 @@ const useMediaQuery = (query: string) => {
     return matches;
 };
 
+// Removed global declaration of aistudio to avoid conflicts with pre-defined environment types.
+
 function App() {
+    const [isActivated, setIsActivated] = useState<boolean | null>(null);
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
     const [generatedImages, setGeneratedImages] = useState<Record<string, GeneratedImage>>({});
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -63,6 +66,30 @@ function App() {
     const dragAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isMobile = useMediaQuery('(max-width: 768px)');
+
+    useEffect(() => {
+        checkActivation();
+    }, []);
+
+    const checkActivation = async () => {
+        // Accessing aistudio via window casting to avoid TypeScript re-declaration errors.
+        const aistudio = (window as any).aistudio;
+        if (aistudio) {
+            const hasKey = await aistudio.hasSelectedApiKey();
+            setIsActivated(hasKey);
+        } else {
+            // Fallback for non-AI Studio environments
+            setIsActivated(true);
+        }
+    };
+
+    const handleActivate = async () => {
+        const aistudio = (window as any).aistudio;
+        if (aistudio) {
+            await aistudio.openSelectKey();
+            setIsActivated(true); // Proceed immediately assuming key selection was successful to avoid race conditions.
+        }
+    };
 
     const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -80,7 +107,7 @@ function App() {
                 setGeneratedImages({});
             } catch (err) {
                 console.error("Upload error:", err);
-                alert("Failed to process image. Please try a standard JPG/PNG.");
+                alert("Could not process this image file.");
             } finally {
                 setIsUploading(false);
                 if (fileInputRef.current) fileInputRef.current.value = "";
@@ -106,21 +133,29 @@ function App() {
         });
         setGeneratedImages(initialImages);
 
-        // Process one by one to avoid rate limits and improve stability
         for (const decade of DECADES) {
             try {
-                const prompt = `Reimagine the person in this photo in the style of the ${decade}. Focus on era-appropriate clothing, hairstyle, and photographic aesthetic. Output a photorealistic result.`;
+                const prompt = `Reimagine the person in this photo in the style of the ${decade}. Era-appropriate clothing, hair, and photo style. High quality photorealistic.`;
                 const resultUrl = await generateDecadeImage(uploadedImage, prompt);
                 setGeneratedImages(prev => ({
                     ...prev,
                     [decade]: { status: 'done', url: resultUrl },
                 }));
             } catch (err) {
-                const msg = err instanceof Error ? err.message : "Error";
-                setGeneratedImages(prev => ({
-                    ...prev,
-                    [decade]: { status: 'error', error: msg },
-                }));
+                const msg = err instanceof Error ? err.message : "Error occurred during generation.";
+                
+                // If specific key/quota errors occur, flag them so the user can re-select a key.
+                if (msg.includes("quota") || msg.includes("limit") || msg.includes("Requested entity was not found")) {
+                    setGeneratedImages(prev => ({
+                        ...prev,
+                        [decade]: { status: 'error', error: "API Key error. Click to re-select." },
+                    }));
+                } else {
+                    setGeneratedImages(prev => ({
+                        ...prev,
+                        [decade]: { status: 'error', error: msg },
+                    }));
+                }
             }
         }
 
@@ -130,10 +165,17 @@ function App() {
 
     const handleRegenerateDecade = async (decade: string) => {
         if (!uploadedImage || generatedImages[decade]?.status === 'pending') return;
+        
+        // If the error indicates a key issue, trigger the key selection dialog.
+        const currentError = generatedImages[decade]?.error;
+        if (currentError && (currentError.includes("Quota") || currentError.includes("Key") || currentError.includes("Requested entity was not found"))) {
+            handleActivate();
+            return;
+        }
 
         setGeneratedImages(prev => ({ ...prev, [decade]: { status: 'pending' } }));
         try {
-            const prompt = `Reimagine the person in this photo in the style of the ${decade}. Era-appropriate clothing and high photographic quality.`;
+            const prompt = `Reimagine the person in this photo in the style of the ${decade}. Authentic vintage look.`;
             const resultUrl = await generateDecadeImage(uploadedImage, prompt);
             setGeneratedImages(prev => ({ ...prev, [decade]: { status: 'done', url: resultUrl } }));
         } catch (err) {
@@ -161,15 +203,11 @@ function App() {
     const handleDownloadAlbum = async () => {
         setIsDownloading(true);
         try {
-            // Fix: Explicitly cast Object.entries results to avoid 'unknown' type errors during filtering and reduction.
             const imageData = (Object.entries(generatedImages) as [string, GeneratedImage][])
                 .filter(([, img]) => img.status === 'done' && img.url)
                 .reduce((acc, [d, img]) => ({ ...acc, [d]: img.url! }), {} as Record<string, string>);
 
-            if (Object.keys(imageData).length === 0) {
-                alert("No successfully generated images to include in the album.");
-                return;
-            }
+            if (Object.keys(imageData).length === 0) return;
 
             const albumDataUrl = await createAlbumPage(imageData);
             const link = document.createElement('a');
@@ -178,11 +216,36 @@ function App() {
             link.click();
         } catch (error) {
             console.error("Album error:", error);
-            alert("Error creating album.");
         } finally {
             setIsDownloading(false);
         }
     };
+
+    if (isActivated === false) {
+        return (
+            <main className="bg-black text-neutral-200 min-h-screen w-full flex flex-col items-center justify-center p-8 overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-full h-full bg-grid-white/[0.05]"></div>
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="z-10 flex flex-col items-center max-w-xl text-center bg-neutral-900/80 backdrop-blur-xl p-10 rounded-2xl border border-white/10 shadow-2xl"
+                >
+                    <h1 className="text-5xl font-caveat font-bold text-neutral-100 mb-6">Activate Time Machine</h1>
+                    <p className="font-permanent-marker text-yellow-400 mb-4 tracking-wide uppercase">API Key Required</p>
+                    <p className="text-neutral-300 mb-8 leading-relaxed">
+                        To generate high-quality images across time, this application requires a paid API Key from your own Google Cloud project.
+                    </p>
+                    <button onClick={handleActivate} className={primaryButtonClasses}>
+                        Select API Key
+                    </button>
+                    <div className="mt-8 text-xs text-neutral-500">
+                        <p>Need help? Check the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener" className="underline hover:text-white">Gemini API Billing Docs</a>.</p>
+                    </div>
+                </motion.div>
+                <Footer />
+            </main>
+        );
+    }
 
     return (
         <main className="bg-black text-neutral-200 min-h-screen w-full flex flex-col items-center justify-center p-4 pb-24 overflow-hidden relative">
@@ -211,9 +274,12 @@ function App() {
                              transition={{ delay: 1, duration: 0.8, type: 'spring' }}
                              className="flex flex-col items-center"
                         >
-                            <div onClick={triggerUpload} className="cursor-pointer group transform hover:scale-105 transition-transform duration-300">
+                            <div 
+                                onClick={triggerUpload} 
+                                className="cursor-pointer group transform hover:scale-105 transition-transform duration-300 active:scale-95"
+                            >
                                  <PolaroidCard 
-                                     caption={isUploading ? "Processing..." : "Click to begin"}
+                                     caption={isUploading ? "Reading..." : "Click to Upload"}
                                      status={isUploading ? "pending" : "done"}
                                  />
                             </div>
@@ -225,7 +291,7 @@ function App() {
                                 onChange={handleImageUpload} 
                             />
                             <p className="mt-8 font-permanent-marker text-neutral-500 text-center max-w-xs text-lg">
-                                {isUploading ? "Reading your photo..." : "Click the polaroid to upload your photo and start your journey through time."}
+                                {isUploading ? "Reading photo data..." : "Click the polaroid to upload your photo."}
                             </p>
                         </motion.div>
                     </div>
@@ -233,10 +299,10 @@ function App() {
 
                 {appState === 'image-uploaded' && uploadedImage && (
                     <div className="flex flex-col items-center gap-6">
-                         <PolaroidCard imageUrl={uploadedImage} caption="Your Photo" status="done" />
+                         <PolaroidCard imageUrl={uploadedImage} caption="Your Photo" status="done" isUserPhoto />
                          <div className="flex items-center gap-4 mt-4">
-                            <button onClick={handleReset} className={secondaryButtonClasses}>Different Photo</button>
-                            <button onClick={handleGenerateClick} className={primaryButtonClasses}>Generate</button>
+                            <button onClick={handleReset} className={secondaryButtonClasses}>New Photo</button>
+                            <button onClick={handleGenerateClick} className={primaryButtonClasses}>Start Time Machine</button>
                          </div>
                     </div>
                 )}
@@ -295,7 +361,7 @@ function App() {
                                         disabled={isDownloading} 
                                         className={`${primaryButtonClasses} disabled:opacity-50`}
                                     >
-                                        {isDownloading ? 'Creating Album...' : 'Download Album'}
+                                        {isDownloading ? 'Building Album...' : 'Download Album'}
                                     </button>
                                     <button onClick={handleReset} className={secondaryButtonClasses}>Start Over</button>
                                 </div>

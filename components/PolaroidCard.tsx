@@ -19,6 +19,7 @@ interface PolaroidCardProps {
     onShake?: (caption: string) => void;
     onDownload?: (caption: string) => void;
     isMobile?: boolean;
+    isUserPhoto?: boolean;
 }
 
 const LoadingSpinner = () => (
@@ -52,31 +53,30 @@ const Placeholder = () => (
     </div>
 );
 
-const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, error, dragConstraintsRef, onShake, onDownload, isMobile }) => {
-    const [isDeveloped, setIsDeveloped] = useState(false);
+const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, error, dragConstraintsRef, onShake, onDownload, isMobile, isUserPhoto }) => {
+    const [isDeveloped, setIsDeveloped] = useState(isUserPhoto || false);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const imgRef = useRef<HTMLImageElement>(null);
     const lastShakeTime = useRef(0);
     const lastVelocity = useRef({ x: 0, y: 0 });
 
-    // Handle resetting animation state when source changes
     useEffect(() => {
-        setIsDeveloped(false);
+        setIsDeveloped(isUserPhoto || false);
         setIsImageLoaded(false);
         
-        // Check if image is already cached/loaded immediately
         if (imgRef.current?.complete) {
             setIsImageLoaded(true);
         }
-    }, [imageUrl]);
+    }, [imageUrl, isUserPhoto]);
 
-    // Developing sequence
     useEffect(() => {
-        if (isImageLoaded) {
+        if (isImageLoaded && !isUserPhoto) {
             const timer = setTimeout(() => setIsDeveloped(true), 200);
             return () => clearTimeout(timer);
+        } else if (isImageLoaded && isUserPhoto) {
+            setIsDeveloped(true);
         }
-    }, [isImageLoaded]);
+    }, [isImageLoaded, isUserPhoto]);
 
     const handleDragStart = () => { lastVelocity.current = { x: 0, y: 0 }; };
 
@@ -130,13 +130,14 @@ const PolaroidCard: React.FC<PolaroidCardProps> = ({ imageUrl, caption, status, 
                             )}
                         </div>
 
-                        {/* Developing overlay */}
-                        <div
-                            className={cn(
-                                "absolute inset-0 z-10 bg-[#3a322c] transition-opacity duration-[3000ms] ease-out pointer-events-none",
-                                isDeveloped ? 'opacity-0' : 'opacity-100'
-                            )}
-                        />
+                        {!isUserPhoto && (
+                            <div
+                                className={cn(
+                                    "absolute inset-0 z-10 bg-[#3a322c] transition-opacity duration-[3000ms] ease-out pointer-events-none",
+                                    isDeveloped ? 'opacity-0' : 'opacity-100'
+                                )}
+                            />
+                        )}
 
                         <img
                             ref={imgRef}
